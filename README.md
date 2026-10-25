@@ -4,11 +4,11 @@ A small web dashboard that shows how a supplier or shipment disruption could hit
 
 **Team Vyntrix** · Exasol ExaThon India 2026 · Track: Factories, Fleets & Supply Chains
 
-> **The data in this project is synthetic.** Every supplier, plant, shipment and event is invented. Nothing here describes a real company, and every cost or stockout figure is an estimate from stated assumptions, not a measurement or a forecast.
-
 ## The problem
 
-When a supplier fails or a shipment is held up, an operations planner has to work out which parts, shipments, plants and production lines are affected, and what to do about it. That information usually sits in separate systems (supplier records, shipment tracking, stock levels, production plans), so the answer takes too long to assemble.
+Operations planners can't quickly see how a supplier or shipment disruption will hit production, inventory and cost, because the data lives in separate systems: supplier records, shipment tracking, stock levels and production plans. Working out which parts, plants and production lines are affected, and what to do about it, takes too long.
+
+> **The data in this project is synthetic.** Every supplier, plant, shipment and event is invented. Nothing here describes a real company, and every cost or stockout figure is an estimate from stated assumptions, not a measurement or a forecast. This stays true even when the app is connected to Exasol: the seed script loads the same invented dataset.
 
 ## How SupplyShield works
 
@@ -62,7 +62,16 @@ run_app.bat
 
 Port 5000 busy? Run `set SUPPLYSHIELD_PORT=5001` and then `python app.py` (with `.venv` activated), and open http://127.0.0.1:5001 yourself. `run_app.bat` always opens port 5000. More help is in [RUN_GUIDE.md](RUN_GUIDE.md).
 
-To run the tests:
+## Using the app
+
+The left menu has four pages.
+
+1. **Command Center:** start here. Check the risk index, how many stock positions are at stockout risk, the earliest projected stockout, and the estimated cost if no action is taken. The "How is this calculated?" and "?" buttons show the formulas. Under *Open disruptions*, click **Open in simulator →** on the supplier failure.
+2. **Simulator & Recovery:** pick a scenario (or keep the one you opened), adjust the parameters such as outage length and budget limit, and click **Run simulation**. You get the cascade (supplier → shipments → stock → line), a projected-stock chart (no disruption vs. no action vs. recommended) and the recovery comparison table, starting with the no-action baseline. Under the recommendation you can add an optional note and choose approve, reject or defer. Nothing is ordered; the decision is only recorded.
+3. **Decision Log:** every run with its decision, note and where it is stored (memory in demo mode, Exasol in Exasol mode).
+4. **Data Source:** shows the active mode and dataset label, runs the connection test (`SELECT 1`) and lists row counts.
+
+To run the unit tests:
 
 ```bat
 run_tests.bat
@@ -83,20 +92,46 @@ What has *not* been verified: the SQL files, the PyExasol calls, the two scripts
 
 Even once connected, the seeded rows are still the same invented data (labelled `SYNTHETIC` in the `DATASET_META` table). A working Exasol connection would show that the integration works, not that the figures describe a real company.
 
-**Test results:** 98 automated tests, all passing apart from 3 skipped. The 3 skipped tests are the live-Exasol integration tests; they were not run against any database, so no live-Exasol test result exists yet. The `.bat` scripts were not executed on a Windows machine when this was last documented.
+**Unit test results:** 98 automated tests, all passing apart from 3 skipped. The 3 skipped tests are the live-Exasol integration tests; they were not run against any database. The `.bat` scripts were not executed on a Windows machine when this was last documented.
 
 ```bat
 python -m unittest discover -s tests -v
 ```
 
-To try the integration tests on your own database (they are read-only), fill in `.env`, then run:
+### Testing with a live Exasol database
 
-```bat
-set RUN_EXASOL_INTEGRATION=1
-python -m unittest tests.test_integration_exasol -v
-```
+Full setup is in [DEPLOYMENT.md](DEPLOYMENT.md). The short version, in order:
 
-Step-by-step Exasol setup (`.env` values, `init_db.py`, `seed_db.py`, how to confirm the connection is real) is in [DEPLOYMENT.md](DEPLOYMENT.md). The app only shows "Exasol · connected" after a real `SELECT 1` succeeds, and it never silently falls back to demo data if Exasol is unreachable.
+1. Open `.env` and fill in `EXASOL_DSN` (`host:port`), `EXASOL_USER` and `EXASOL_PASSWORD` from your own database. Never paste these into the README, screenshots or chat. Restart the app after every `.env` change. For Exasol SaaS, the database must be running and your public IP must be on its allowed-IP list.
+2. Create the schema and views, then load the synthetic data (`--reset` deletes the whole schema, so don't use it on data you want to keep):
+   ```bat
+   python scripts\init_db.py
+   python scripts\seed_db.py
+   ```
+3. Start the app and open **Data Source**. Click **Test connection (SELECT 1)**, then **Use Exasol data**. The top-right pill should read "Exasol · connected" and the banner should show the `SYNTHETIC` dataset label. If something fails, the app shows a connection error. It does not switch to demo data.
+4. Run a simulation. The result should say "saved to Exasol (SCENARIO_RUNS, RECOVERY_OPTIONS)". If saving fails, it shows an error instead. Check in an SQL client:
+   ```sql
+   SELECT RUN_ID, CREATED_AT, SCENARIO_TYPE, DECISION FROM SUPPLYSHIELD.SCENARIO_RUNS ORDER BY CREATED_AT DESC;
+   ```
+5. Record a decision and check that the `DECISION` column updates.
+6. Run the read-only integration tests:
+   ```bat
+   set RUN_EXASOL_INTEGRATION=1
+   python -m unittest tests.test_integration_exasol -v
+   ```
+7. Optional: stop the database and press **Refresh data**. You should get a connection error.
+
+**Live verification record.** Fill this in only with what you actually saw, and don't change the status above until every row passes.
+
+| Check | Result |
+|---|---|
+| `SELECT 1` connection test | Not yet verified |
+| Schema, tables and views created (`init_db.py`) | Not yet verified |
+| Synthetic data loaded (`seed_db.py`) | Not yet verified |
+| Dashboard loads from Exasol (green pill, row counts) | Not yet verified |
+| Simulation run written to `SCENARIO_RUNS` / `RECOVERY_OPTIONS` | Not yet verified |
+| Decision written and visible in `SCENARIO_RUNS` | Not yet verified |
+| 3 integration tests pass | Not yet verified |
 
 ## Limitations
 
